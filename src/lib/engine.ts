@@ -83,17 +83,19 @@ export function detectImageRequest(text: string): string | null {
 }
 
 export async function makeTitle(firstQuestion: string) {
+  const fallback = firstQuestion.replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ').slice(0, 48);
   try {
     const { text } = await quickChat(
       [
-        { role: 'system', content: 'Donne un titre de 2 à 5 mots, sans guillemets ni ponctuation finale, dans la langue du message.' },
-        { role: 'user', content: firstQuestion.slice(0, 800) }
+        { role: 'system', content: 'Tu es un outil qui nomme des conversations. Tu ne réponds jamais à la question : tu donnes seulement un titre de 2 à 5 mots qui résume le sujet, sans guillemets ni ponctuation finale, dans la langue du message.' },
+        { role: 'user', content: `Message à résumer en titre :\n«${firstQuestion.slice(0, 600)}»\n\nTitre :` }
       ],
-      { temperature: 0.3, maxTokens: 300 }
+      { temperature: 0.2, maxTokens: 300 }
     );
-    return text.split('\n')[0].replace(/^["'«\s#*]+|["'»\s.*]+$/g, '').slice(0, 48) || null;
+    const t = text.split('\n')[0].replace(/^(titre\s*:\s*)/i, '').replace(/^["'«\s#*]+|["'»\s.*]+$/g, '');
+    return t && t.split(/\s+/).length <= 7 && !/^(je|bonjour|en tant)/i.test(t) ? t.slice(0, 48) : fallback;
   } catch {
-    return null;
+    return fallback;
   }
 }
 

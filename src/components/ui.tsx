@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle, Check, Code2, FileText, Gem, Heart, ImagePlus, Info, Search, Sparkles, Star, Workflow, X, type LucideIcon
@@ -80,6 +81,11 @@ export function AiDisclaimer({ compact }: { compact?: boolean }) {
   );
 }
 
+/** Affiche au niveau de la page (évite d’être coincé dans un panneau flouté). */
+export function Portal({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body);
+}
+
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
@@ -88,6 +94,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
     return () => window.removeEventListener('keydown', k);
   }, [open, onClose]);
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <motion.div className="modal-backdrop" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -110,6 +117,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
         </motion.div>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 

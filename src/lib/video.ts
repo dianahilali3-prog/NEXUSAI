@@ -33,7 +33,7 @@ Ton : ${opts.tone}. Garde une cohérence visuelle (mêmes couleurs, même style)
       },
       { role: 'user', content: text }
     ],
-    { signal: opts.signal, temperature: 0.6, maxTokens: 3000 }
+    { signal: opts.signal, temperature: 0.6, maxTokens: 3000, reasoning: 'low' }
   );
   const json = extractJson(raw);
   const scenes = (Array.isArray(json?.scenes) ? json.scenes : []).slice(0, 12).map((s: Record<string, unknown>, i: number) => ({

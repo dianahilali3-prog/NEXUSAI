@@ -18,7 +18,7 @@ import { addToGallery, deleteConversation, listConversations, listMemory, saveCo
 import type { Agent, Attachment, ChatMessage, Conversation, Source } from '../lib/types';
 import { gatherWebContext, URL_RE } from '../lib/web';
 import { GalleryImage } from './GalleryImage';
-import { AGENT_ICON, AiDisclaimer, copyText, formatDate, go, Modal, setIntent, takeIntent, toast } from './ui';
+import { AGENT_ICON, AiDisclaimer, copyText, formatDate, go, Modal, Portal, setIntent, takeIntent, toast } from './ui';
 
 export function loadCustomAgents(): Agent[] {
   try {
@@ -650,6 +650,7 @@ export default function ChatView() {
       <FeedbackModal message={feedbackFor} onClose={() => setFeedbackFor(null)} onSubmit={submitLesson} />
 
       {/* Mode vocal mains libres */}
+      <Portal>
       <AnimatePresence>
         {voice !== 'off' && (
           <motion.div className="voice-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-label="Conversation vocale">
@@ -670,6 +671,7 @@ export default function ChatView() {
           </motion.div>
         )}
       </AnimatePresence>
+      </Portal>
     </div>
   );
 }

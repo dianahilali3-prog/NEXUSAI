@@ -4,7 +4,7 @@ import { Copy, Download, Film, FolderHeart, ImagePlus, Share2, Trash2, X } from 
 import { downloadBlob, extFor, shareBlob } from '../lib/images';
 import { deleteGalleryItem, getGalleryBlob, listGallery } from '../lib/storage';
 import type { GalleryItem } from '../lib/types';
-import { copyText, EmptyState, formatDate, go, setIntent, toast, useObjectUrl } from './ui';
+import { copyText, EmptyState, formatDate, go, Portal, setIntent, toast, useObjectUrl } from './ui';
 
 export default function Gallery() {
   const [items, setItems] = useState<GalleryItem[] | null>(null);
@@ -45,7 +45,7 @@ export default function Gallery() {
           {shown.map(i => <Thumb key={i.id} item={i} onOpen={() => setOpen(i)} />)}
         </div>
       )}
-      <AnimatePresence>{open && <Viewer item={open} onClose={() => setOpen(null)} />}</AnimatePresence>
+      <Portal><AnimatePresence>{open && <Viewer item={open} onClose={() => setOpen(null)} />}</AnimatePresence></Portal>
     </section>
   );
 }

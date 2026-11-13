@@ -95,7 +95,7 @@ export const LOCAL_MODELS = [
 ];
 
 export class ProviderError extends Error {
-  constructor(message: string, public status?: number, public retryAfter?: number) {
+  constructor(message: string, public status?: number, public retryable = false) {
     super(message);
   }
 }
@@ -152,7 +152,7 @@ export function friendlyHttpError(status: number, body: string, who: string): Pr
     status === 429 ? `${who} : trop de demandes pour le moment (limite gratuite atteinte).` :
     status >= 500 ? `${who} : service momentanément indisponible (${status}).` :
     `${who} : erreur ${status}.`;
-  return new ProviderError(detail && status !== 429 ? `${msg} ${String(detail).slice(0, 160)}` : msg, status);
+  return new ProviderError(detail && status !== 429 ? `${msg} ${String(detail).slice(0, 160)}` : msg, status, status === 429 || status >= 500);
 }
 
 /** Lit un flux SSE compatible OpenAI. */
@@ -205,12 +205,48 @@ export interface StreamOptions {
   temperature?: number;
   only?: ProviderId; // forcer un fournisseur
   maxTokens?: number;
+  /** Effort de réflexion des modèles « à raisonnement » (Pollinations / GPT-OSS). */
+  reasoning?: 'low' | 'medium' | 'high';
 }
 export interface StreamCallbacks {
   onToken: (t: string) => void;
   onReasoning?: (t: string) => void;
   onProvider?: (id: ProviderId, model: string) => void;
   onNote?: (text: string) => void;
+}
+
+// Le service gratuit Pollinations refuse les requêtes simultanées d'un même visiteur
+// (le refus arrive sans en-têtes CORS et ressemble à une coupure réseau) :
+// on envoie donc une seule requête à la fois, avec quelques nouvelles tentatives.
+const queues = new Map<ProviderId, Promise<unknown>>();
+function serialized<T>(id: ProviderId, task: () => Promise<T>): Promise<T> {
+  const prev = queues.get(id) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  queues.set(id, next.catch(() => undefined));
+  return next;
+}
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((res, rej) => {
+    const t = setTimeout(res, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(t); rej(new DOMException('Arrêté', 'AbortError')); });
+  });
+
+async function callRemoteWithRetry(id: ProviderId, messages: WireMessage[], opts: StreamOptions, cb: StreamCallbacks): Promise<string> {
+  const run = async () => {
+    const delays = id === 'pollinations' ? [2500, 6000] : [2000];
+    for (let attempt = 0; ; attempt++) {
+      let started = false;
+      try {
+        return await callRemote(id, messages, opts, { ...cb, onToken: t => { started = true; cb.onToken(t); } });
+      } catch (e) {
+        const retryable = e instanceof ProviderError && e.retryable && !started && !opts.signal?.aborted;
+        if (!retryable || attempt >= delays.length) throw e;
+        cb.onNote?.(`${PROVIDERS[id].short} occupé, nouvel essai dans ${Math.round(delays[attempt] / 1000)} s…`);
+        await wait(delays[attempt], opts.signal);
+      }
+    }
+  };
+  return id === 'pollinations' ? serialized(id, run) : run();
 }
 
 async function callRemote(id: ProviderId, messages: WireMessage[], opts: StreamOptions, cb: StreamCallbacks): Promise<string> {
@@ -228,7 +264,12 @@ async function callRemote(id: ProviderId, messages: WireMessage[], opts: StreamO
   };
   // Les modèles « à raisonnement » comptent leur réflexion dans max_tokens : marge large.
   if (opts.maxTokens && id !== 'pollinations') body.max_tokens = Math.max(opts.maxTokens, 1024);
-  if (id === 'pollinations') { body.private = true; body.referrer = 'nexus-ai'; }
+  if (id === 'pollinations') {
+    body.private = true;
+    body.referrer = 'nexus-ai';
+    // Sans cela, le modèle peut épuiser sa limite en réfléchissant et ne rien répondre.
+    body.reasoning_effort = opts.reasoning ?? 'medium';
+  }
   try {
     let res: Response;
     try {
@@ -239,7 +280,9 @@ async function callRemote(id: ProviderId, messages: WireMessage[], opts: StreamO
       throw new ProviderError(
         id === 'custom'
           ? 'Mon serveur : connexion impossible. Vérifie l’adresse, que le serveur tourne, et qu’il autorise ce site (CORS / OLLAMA_ORIGINS).'
-          : `${PROVIDERS[id].short} : connexion impossible (réseau coupé ou service bloqué).`
+          : `${PROVIDERS[id].short} : connexion impossible (service saturé ou réseau coupé).`,
+        undefined,
+        id !== 'custom'
       );
     }
     window.clearTimeout(connectTimer);
@@ -255,7 +298,7 @@ async function callRemote(id: ProviderId, messages: WireMessage[], opts: StreamO
       return text;
     }
     const text = await readSSE(res, cb.onToken, t => cb.onReasoning?.(t), 90_000, () => local.abort());
-    if (!text.trim()) throw new ProviderError(`${PROVIDERS[id].short} : réponse vide.`);
+    if (!text.trim()) throw new ProviderError(`${PROVIDERS[id].short} : réponse vide.`, undefined, true);
     return text;
   } finally {
     window.clearTimeout(connectTimer);
@@ -286,7 +329,7 @@ export async function streamChat(messages: WireMessage[], opts: StreamOptions, c
         cb.onProvider?.(id, s.localModel);
         text = await localChat(messages.map(m => ({ role: m.role, content: flatten(m.content) })), wrapped.onToken, opts.signal, cb.onNote);
       } else {
-        text = await callRemote(id, messages, opts, wrapped);
+        text = await callRemoteWithRetry(id, messages, opts, wrapped);
       }
       return { provider: id, model: id === 'local' ? s.localModel : s.models[id], text, errors };
     } catch (e) {
@@ -303,7 +346,7 @@ export async function streamChat(messages: WireMessage[], opts: StreamOptions, c
 /** Petite requête non diffusée (titres, amélioration de prompt, mémoire…). */
 export async function quickChat(messages: WireMessage[], opts: StreamOptions = {}) {
   let out = '';
-  const r = await streamChat(messages, opts, { onToken: t => { out += t; } });
+  const r = await streamChat(messages, { reasoning: 'low', ...opts }, { onToken: t => { out += t; } });
   return { ...r, text: out.trim() };
 }
 
