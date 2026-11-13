@@ -313,11 +313,28 @@ export function loadPiper() {
   return piperMod;
 }
 
+// La bibliothèque pointe par défaut vers une ancienne version du moteur ONNX :
+// on fixe la version réellement installée (1.31.1) pour éviter l'erreur « no available backend ».
+const ORT_WASM = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
+type Session = { predict(text: string): Promise<Blob> };
+let session: Promise<Session> | null = null;
+let sessionVoice = '';
+
 export async function piperSynth(text: string, voiceId = getSettings().voice.piperVoice, onStatus?: (t: string) => void): Promise<Blob> {
   const tts = await loadPiper();
-  return tts.predict({ text, voiceId: voiceId as never }, (p: { loaded: number; total: number }) => {
-    if (p.total) onStatus?.(`Téléchargement de la voix Piper… ${Math.round((p.loaded * 100) / p.total)} %`);
-  });
+  if (!session || sessionVoice !== voiceId) {
+    (tts.TtsSession as unknown as { _instance: unknown })._instance = null; // nouvelle voix = nouvelle session
+    sessionVoice = voiceId;
+    session = tts.TtsSession.create({
+      voiceId: voiceId as never,
+      progress: (p: { loaded: number; total: number }) => {
+        if (p.total) onStatus?.(`Téléchargement de la voix Piper… ${Math.round((p.loaded * 100) / p.total)} %`);
+      },
+      wasmPaths: { onnxWasm: ORT_WASM, piperData: `${tts.WASM_BASE}.data`, piperWasm: `${tts.WASM_BASE}.wasm` }
+    }) as Promise<Session>;
+    session.catch(() => { session = null; });
+  }
+  return (await session).predict(text);
 }
 
 async function speakPiper(text: string, my: number, onStatus?: (t: string) => void) {

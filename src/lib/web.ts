@@ -48,7 +48,7 @@ export async function searchSearx(query: string, base: string) {
 
 /** Lit une page web en texte via Jina Reader (gratuit sans clé, ~20 requêtes/minute). */
 export async function readUrl(url: string, maxChars = 9000): Promise<{ title: string; text: string }> {
-  const res = await fetch(`https://r.jina.ai/${url}`, { signal: timeout(30000), headers: { 'X-Return-Format': 'markdown' } });
+  const res = await fetch(`https://r.jina.ai/${url}`, { signal: timeout(45000) });
   if (res.status === 429) throw new Error('Lecture de page : limite gratuite atteinte (20/minute), réessaie dans une minute.');
   if (!res.ok) throw new Error(`Lecture de page impossible (${res.status}).`);
   const raw = await res.text();
