@@ -56,8 +56,14 @@ let lastPollinationsImage = 0;
  * Image Pollinations sans clé. Le service gratuit limite la cadence : il répond alors 402/429,
  * parfois sans en-tête CORS (vu comme une erreur réseau). On espace les requêtes et on réessaie.
  */
+/** Vérifié sur github.io : « ; » fait échouer la requête et un prompt trop long est refusé (402) sans clé. */
+export function cleanImagePrompt(prompt: string, maxChars = 380) {
+  const clean = prompt.replace(/[;#?&%\\/|<>{}[\]^`~]+/g, ',').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/\s+/g, ' ').trim();
+  return clean.length > maxChars ? clean.slice(0, maxChars).replace(/[\s,]+\S*$/, '') : clean;
+}
+
 export async function pollinationsImage(prompt: string, w: number, h: number, seed: number, signal?: AbortSignal, onStatus?: StatusFn) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 1500))}?width=${w}&height=${h}&seed=${seed}&nologo=true&private=true&safe=true&referrer=nexus-ai`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanImagePrompt(prompt))}?width=${w}&height=${h}&seed=${seed}&nologo=true&private=true&safe=true&referrer=nexus-ai`;
   const delays = [8000, 20000, 40000];
   for (let attempt = 0; ; attempt++) {
     const gap = 3000 - (Date.now() - lastPollinationsImage);
@@ -160,7 +166,7 @@ export async function enhancePrompt(idea: string, style = '', signal?: AbortSign
       {
         role: 'system',
         content:
-          'You are an expert prompt engineer for text-to-image models (FLUX, SDXL). Rewrite the user idea into ONE vivid English prompt of 40 to 80 words: subject, setting, composition, lighting, colors, mood, style, camera/medium. Keep every concrete detail requested (names of objects, colors, text to display). Do not add people if none were requested. Output ONLY the prompt, no quotes, no preamble.'
+          'You are an expert prompt engineer for text-to-image models (FLUX, SDXL). Rewrite the user idea into ONE vivid English prompt of 30 to 55 words, using commas only (never semicolons): subject, setting, composition, lighting, colors, mood, style, camera/medium. Keep every concrete detail requested (names of objects, colors, text to display). Do not add people if none were requested. Output ONLY the prompt, no quotes, no preamble.'
       },
       { role: 'user', content: `${idea}${style ? `\nStyle: ${style}` : ''}` }
     ],
