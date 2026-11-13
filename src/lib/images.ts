@@ -50,18 +50,46 @@ async function checkImage(res: Response, who: string) {
   return blob;
 }
 
-export async function pollinationsImage(prompt: string, w: number, h: number, seed: number, signal?: AbortSignal) {
+let lastPollinationsImage = 0;
+
+/**
+ * Image Pollinations sans clé. Le service gratuit limite la cadence : il répond alors 402/429,
+ * parfois sans en-tête CORS (vu comme une erreur réseau). On espace les requêtes et on réessaie.
+ */
+export async function pollinationsImage(prompt: string, w: number, h: number, seed: number, signal?: AbortSignal, onStatus?: StatusFn) {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 1500))}?width=${w}&height=${h}&seed=${seed}&nologo=true&private=true&safe=true&referrer=nexus-ai`;
-  const t = withTimeout(signal, 150_000);
-  try {
-    return await checkImage(await fetch(url, { signal: t.signal }), 'Pollinations');
-  } catch (e) {
-    if (t.timedOut()) throw new Error('Pollinations : délai dépassé (service chargé).');
-    throw e;
-  } finally {
-    t.done();
+  const delays = [8000, 20000, 40000];
+  for (let attempt = 0; ; attempt++) {
+    const gap = 3000 - (Date.now() - lastPollinationsImage);
+    if (gap > 0) await sleep(gap, signal);
+    lastPollinationsImage = Date.now();
+    const t = withTimeout(signal, 150_000);
+    let limited = false;
+    try {
+      const res = await fetch(url, { signal: t.signal });
+      if (res.status === 402 || res.status === 429 || res.status >= 500) limited = true;
+      else return await checkImage(res, 'Pollinations');
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      if (t.timedOut()) throw new Error('Pollinations : délai dépassé (service chargé).');
+      limited = true; // refus sans CORS = limite de cadence ou saturation
+    } finally {
+      t.done();
+    }
+    if (limited && attempt < delays.length) {
+      onStatus?.(`Pollinations : limite gratuite momentanée, nouvel essai dans ${delays[attempt] / 1000} s…`);
+      await sleep(delays[attempt], signal);
+      continue;
+    }
+    throw new Error('Pollinations : limite gratuite atteinte pour le moment. Réessaie dans quelques minutes.');
   }
 }
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((res, rej) => {
+    const t = setTimeout(res, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(t); rej(new DOMException('Arrêté', 'AbortError')); });
+  });
 
 export async function pollinationsKeyImage(prompt: string, w: number, h: number, seed: number, signal?: AbortSignal) {
   const s = getSettings();
@@ -107,7 +135,7 @@ export async function generateImage(
       let blob: Blob;
       if (e === 'pollinations') {
         opts.onStatus?.('Pollinations : création de l’image…');
-        blob = await pollinationsImage(prompt, opts.width, opts.height, seed, opts.signal);
+        blob = await pollinationsImage(prompt, opts.width, opts.height, seed, opts.signal, opts.onStatus);
       } else if (e === 'pollinations-key') {
         opts.onStatus?.(`Pollinations+ (${s.image.keyModel}) : création…`);
         blob = await pollinationsKeyImage(prompt, opts.width, opts.height, seed, opts.signal);

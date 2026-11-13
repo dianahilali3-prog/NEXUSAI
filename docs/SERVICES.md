@@ -17,6 +17,11 @@ Vérifié le 13 novembre 2026 par des requêtes réelles (en-tête `Origin: http
 | DuckDuckGo | — | — | — | **Non utilisé** : sa politique interdit d'afficher ses résultats dans un autre service. |
 | jsDelivr / cdnjs | Moteur de la voix Piper | Non | Oui | Téléchargement unique. |
 
+## Constats faits sur le site en ligne (github.io)
+- Le chat Pollinations sans clé répond depuis `https://dianahilali3-prog.github.io` (pas de blocage anti-robot), mais **refuse les requêtes simultanées** : le refus arrive sans en-tête CORS et ressemble à une coupure réseau. NEXUS envoie donc une seule requête à la fois et réessaie deux fois avant de basculer.
+- GPT-OSS 20B est un modèle « à raisonnement » : sans `reasoning_effort`, il peut épuiser sa limite (« output_token_limit_exceeded ») sur les tâches longues. NEXUS utilise `low` pour storyboard, titres et prompts, `medium` pour le chat.
+- Depuis `localhost`, Pollinations exige un jeton Cloudflare Turnstile : les tests locaux du chat ne sont pas représentatifs (il faut tester sur github.io).
+
 ## Conditions d'utilisation lues
 - **Pollinations** (mise à jour du 10/10/2026) : service « tel quel », sans garantie ni SLA ; limites et modèles modifiables ; interdits notamment : deepfakes de personnes réelles sans consentement, contenus illégaux, contournement des limites.
 - **Hugging Face ZeroGPU** : usage gratuit pour tous avec quota quotidien ; les comptes PRO ont 8× plus de quota.
